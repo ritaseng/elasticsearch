@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: cdielk
+  labels:
+    task: logging
+    app: logstash
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+  pipeline.conf: "
+    input {
+  elasticsearch {
+   hosts => "https://10.113.217.57:9200"                     
+   index => "*"
+  }
+}
+filter {
+ mutate {
+  remove_field => [ "@version", "@timestamp" ]   
+ }
+}
+output {
+ elasticsearch {
+   host => "https://elasticsearch-ingest.cdielk.svc.cluster.local:9200"                           
+   username => "elastic"
+   password => "Welcome@321"
+   ssl => true
+   ssl_verification => false
+#   port => 9200
+#   protocol => "http"
+   manage_template => false
+   index => "_index1"
+   document_id => "%{id}"                        
+   workers => 1
+ }
+}
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: logging-logstash
+  namespace: cdielk
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        task: logging
+        k8s-app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:7.6.2
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: /config
+          name: config
+        - mountPath: /pipeline
+          name: pipeline
+      volumes:
+      - name: config
+        configMap:
+          name: logstash-config
+          items:
+          - key: logstash.yml
+            path: logstash.yml
+      - name: pipeline
+        configMap:
+          name: logstash-config
+          items:
+          - key: pipeline.conf
+            path: pipeline.conf
+      securityContext:
+        fsGroup: 101
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    task: logging
+#    kubernetes.io/name: logstash
+  name: logging-logstash
+  namespace: cdielk
+spec:
+  ports:
+  - port: 5000
+    targetPort: 5000
+    name: lumberjack
+  selector:
+    app: logstash
